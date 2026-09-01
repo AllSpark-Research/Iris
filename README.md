@@ -93,4 +93,4 @@ what was already ruled out. We report `discard-all` as the headline setting even
 
 ---
 
-Serving code and the evaluation harness are coming soon.
+Key components of the data construction, training, and evaluation pipelines are coming soon.
