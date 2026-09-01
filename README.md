@@ -36,7 +36,6 @@ exactly that loop.
 
 | Model | Size | BrowseComp | BrowseComp-ZH | DeepSearchQA | HLE |
 | --- | --- | --- | --- | --- | --- |
-| REDSearcher | 30B | 57.4 | 58.2 | – | 34.3 |
 | MiroThinker-1.7-mini | 30B | 67.9 | 72.3 | – | 36.4 |
 | FORT-Searcher | 30B | 72.2 | 75.0 | – | – |
 | Apodex-1.0-mini | 35B | 71.5 | 80.6 | 82.2 | 46.8 |
