@@ -89,24 +89,8 @@ tool set, one context limit, and one judge.
 `discard-all` clears the accumulated tool history and restarts from the question once the running
 context crosses a threshold. `retry` restarts a failed episode, carrying forward a short summary of
 what was already ruled out. We report `discard-all` as the headline setting even where adding
-`retry` scores higher, because each retry re-runs the question from scratch.
-
-## How Iris Is Built
-
-<div align="center">
-<img src="./figures/data_pipeline.png" width="88%"/>
-</div>
-
-- **Training questions that cannot be shortcut.** Questions are reverse-constructed from the
-  hyperlink structure of a web corpus, and every non-answer entity is rewritten into a descriptive
-  reference so the intended multi-hop path is the only path. A question is kept only if a reference
-  model fails it closed-book but solves it once the supporting evidence is supplied.
-- **Two-level trajectory filtering.** Whole trajectories are gated on correctness, degeneracy, and
-  search depth; individual turns are then labeled by a judge whose rubric is induced from the data
-  rather than written by hand.
-- **SFT–RL climbing.** Each round of RL explores; its hardest solved and most efficient rollouts are
-  consolidated by a supervised pass; RL resumes from there.
+`retry` scores higher.
 
 ---
 
-Serving code and the evaluation harness are not part of this release.
+Serving code and the evaluation harness are coming soon.
