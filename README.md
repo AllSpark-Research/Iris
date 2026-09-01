@@ -14,46 +14,10 @@
 
 **Climbing to the Search Frontier.**
 
-Iris is a pair of open-weight search agents built to find things on the live web: the kind of
-question whose answer is not in any model's parameters, is not on any single page, and only
-appears once several indirect clues have been chased down and reconciled.
-
-We are releasing two models, post-trained from the Qwen3.5/3.6 series:
-**Iris-mini** (35B-A3B) and **Iris-pro** (397B-A17B). Both run as a single ReAct agent with a
-search tool and a page reader. No sub-agents, no test-time verification, no answer voting.
-
-Three things shape the recipe. Training questions are **reverse-constructed** from the hyperlink
-structure of a web corpus and then stripped of every directly searchable anchor, so a question
-cannot be resolved by pasting a name into a search box. Training itself **alternates** supervised
-fine-tuning and reinforcement learning, returning the hardest solved and most efficient rollouts
-of each RL round to the next supervised pass. And every benchmark is reported **twice**, with and
-without inference-time context management, because that wrapper is worth more on these benchmarks
-than most of the methodological differences between systems.
-
-## Open Source
-
-| Model | Base | Total / Active | Context | Download |
-| --- | --- | --- | --- | --- |
-| **Iris-mini** | Qwen3.6-35B-A3B | 35B / 3B | 256K | _coming soon_ |
-| **Iris-pro** | Qwen3.5-397B-A17B | 397B / 17B | 256K | _coming soon_ |
-
-Weights will be published under [AllSpark-Research](https://huggingface.co/AllSpark-Research) on Hugging Face.
-
-## Highlights
-
-- **Questions that cannot be shortcut.** Every non-answer entity in a synthesized question is
-  rewritten into a descriptive reference, so the intended multi-hop path is the only path. A
-  question is kept only if a reference model *fails* it closed-book but *solves* it once the
-  supporting evidence is supplied: hard and solvable at the same time.
-- **Two-level trajectory filtering.** Whole trajectories are gated on correctness, degeneracy,
-  and search depth; individual turns are then labeled by a judge whose rubric is induced from the
-  data rather than written by hand. Masked turns stay in context but carry no loss.
-- **SFT–RL climbing.** Each round of RL explores; its hardest solved and most efficient rollouts
-  are consolidated by a supervised pass; RL resumes from there. The difficulty band is defined
-  against the current policy, so the training slice tracks the frontier automatically.
-- **Reported in both regimes.** With and without context management, under one tool set, one
-  context limit, and one judge. The gap between the two is large, uneven across benchmarks, and
-  smaller for the larger model, which is exactly why we think it should be reported separately.
+Iris-mini (35B-A3B) and Iris-pro (397B-A17B) are open-weight search agents post-trained from the
+Qwen3.5/3.6 series. A capable search agent has to decide what to search, how to read what comes
+back, when to keep going, and when the evidence it has gathered is enough. Iris is trained for
+exactly that loop.
 
 ## Performance
 
@@ -68,74 +32,81 @@ Weights will be published under [AllSpark-Research](https://huggingface.co/AllSp
 </tr>
 </table>
 
-All Iris numbers below use the `discard-all` context-management setting, which we treat as the
-default. Baseline numbers are taken from their public reports, each under its own context
-management.
+**30–35B**
 
-| Benchmark | **Iris-mini** | **Iris-pro** | XYZ-Aquila-mini | XYZ-Aquila-pro | Nex-N2-Pro | Kimi-K2.6 | DeepSeek-V4-Pro | Kimi-K3 |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| BrowseComp | **82.2** | **88.6** | 78.8 | 84.8 | 83.7 | 83.2 | 83.4 | 91.2 |
-| BrowseComp-ZH | **84.8** | **85.1** | 82.9 | 85.1 | 79.6 | – | – | – |
-| DeepSearchQA (F1) | 86.9 | **92.9** | 89.5 | 92.5 | 92.3 | 92.5 | – | 95.0 |
-| HLE (text-only) | **52.3** | **56.4** | 51.1 | 53.3 | 50.0 | 54.0<sup>f</sup> | 48.2 | 56.0<sup>f</sup> |
+| Model | Size | BrowseComp | BrowseComp-ZH | DeepSearchQA | HLE |
+| --- | --- | --- | --- | --- | --- |
+| REDSearcher | 30B | 57.4 | 58.2 | – | 34.3 |
+| MiroThinker-1.7-mini | 30B | 67.9 | 72.3 | – | 36.4 |
+| FORT-Searcher | 30B | 72.2 | 75.0 | – | – |
+| Apodex-1.0-mini | 35B | 71.5 | 80.6 | 82.2 | 46.8 |
+| Nex-N2-mini | 35B | 74.1 | 79.6<sup>r</sup> | 87.2<sup>r</sup> | 37.1<sup>r</sup> |
+| Agents-A1 | 35B | 75.5 | – | – | 47.6 |
+| XYZ-Aquila-mini | 35B | 78.8 | 82.9 | **89.5** | 51.1 |
+| **Iris-mini** | 35B | **82.2** | **84.8** | 86.9 | **52.3** |
 
-<sup>f</sup> evaluated on the full HLE set rather than the text-only subset, so not directly comparable.
+**~400B**
 
-In the 30–35B range Iris-mini leads on three of the four benchmarks; in the ~400B range Iris-pro
-leads or ties on all four. Iris-mini also stays within about a point of trillion-parameter systems
-on BrowseComp while activating 3B parameters per token.
+| Model | Size | BrowseComp | BrowseComp-ZH | DeepSearchQA | HLE |
+| --- | --- | --- | --- | --- | --- |
+| MiroThinker-1.7 | 397B | 74.0 | 75.3 | – | 42.9 |
+| Apodex-1.0 | 397B | 75.5 | 82.6 | 84.6 | 49.0 |
+| Nex-N2-Pro | 397B | 83.7 | 79.6<sup>r</sup> | 92.3<sup>r</sup> | 50.0<sup>r</sup> |
+| XYZ-Aquila-pro | 397B | 84.8 | **85.1** | 92.5 | 53.3 |
+| **Iris-pro** | 397B | **88.6** | **85.1** | **92.9** | **56.4** |
+
+DeepSearchQA is scored with F1, the rest with accuracy; HLE uses the text-only subset. Iris numbers
+use the `discard-all` context-management setting; baselines come from their public reports, each
+under its own context management. <sup>r</sup> reproduced by the XYZ-Aquila team.
+
+## Models
+
+| Model | Base | Params (total / active) | Context | Download |
+| --- | --- | --- | --- | --- |
+| **Iris-mini** | Qwen3.6-35B-A3B | 35B / 3B | 256K | _coming soon_ |
+| **Iris-pro** | Qwen3.5-397B-A17B | 397B / 17B | 256K | _coming soon_ |
 
 ## Context Management
 
-Long-horizon search exhausts the context window before the constraints of a hard question have
-been resolved, and every serious system now carries some mechanism for this. The effect is not
-marginal, which makes a single published number hard to read: it belongs to the agent and its
-harness together.
-
-We therefore report every benchmark in both regimes. `discard-all` clears the accumulated tool
-history and restarts from the question once the running context crosses a threshold; `retry`
-restarts an episode that failed to produce a valid answer, carrying forward a short summary of
-what was already ruled out.
+Long-horizon search runs out of context before a hard question is resolved, so every serious system
+carries some mechanism for this. It is worth enough that a single published number belongs to the
+agent and its harness together, which is why we report every benchmark in both regimes, under one
+tool set, one context limit, and one judge.
 
 | Setting | BrowseComp | BrowseComp-ZH | DeepSearchQA | HLE |
 | --- | --- | --- | --- | --- |
 | **Iris-mini** | | | | |
-| w/o context management | 64.7 | 72.3 | 81.0 | 43.2 |
-| retry | – | 83.0 <sub>(+10.7)</sub> | 89.1 <sub>(+8.1)</sub> | 52.0 <sub>(+8.8)</sub> |
-| discard-all | 82.2 <sub>(+17.5)</sub> | 84.8 <sub>(+12.5)</sub> | 86.9 <sub>(+5.9)</sub> | 52.3 <sub>(+9.1)</sub> |
-| discard-all + retry | **85.9** <sub>(+21.2)</sub> | **85.1** <sub>(+12.8)</sub> | **89.9** <sub>(+8.9)</sub> | **52.4** <sub>(+9.2)</sub> |
+| w/o | 64.7 | 72.3 | 81.0 | 43.2 |
+| retry | – | 83.0 | 89.1 | 52.0 |
+| discard-all | 82.2 | 84.8 | 86.9 | 52.3 |
+| discard-all + retry | **85.9** | **85.1** | **89.9** | **52.4** |
 | **Iris-pro** | | | | |
-| w/o context management | 72.6 | 76.8 | 86.4 | 50.8 |
-| retry | – | 84.1 <sub>(+7.3)</sub> | 92.3 <sub>(+5.9)</sub> | **56.6** <sub>(+5.8)</sub> |
-| discard-all | 88.6 <sub>(+16.0)</sub> | **85.1** <sub>(+8.3)</sub> | 92.9 <sub>(+6.5)</sub> | 56.4 <sub>(+5.6)</sub> |
-| discard-all + retry | **90.3** <sub>(+17.7)</sub> | **85.1** <sub>(+8.3)</sub> | **93.4** <sub>(+7.0)</sub> | **56.6** <sub>(+5.8)</sub> |
+| w/o | 72.6 | 76.8 | 86.4 | 50.8 |
+| retry | – | 84.1 | 92.3 | **56.6** |
+| discard-all | 88.6 | **85.1** | 92.9 | 56.4 |
+| discard-all + retry | **90.3** | **85.1** | **93.4** | **56.6** |
 
-Two patterns are worth noting. The gains are larger for the smaller model, and they are heavily
-concentrated on BrowseComp. Both models are given the same 256K window, so what differs is not the
-size of the budget but how quickly each one consumes it, and how often a benchmark pushes a session
-into that limit at all. HLE has the lowest no-context baseline of the four and still gains less
-than BrowseComp: its deficit is expert knowledge, not context.
+`discard-all` clears the accumulated tool history and restarts from the question once the running
+context crosses a threshold. `retry` restarts a failed episode, carrying forward a short summary of
+what was already ruled out. We report `discard-all` as the headline setting even where adding
+`retry` scores higher, because each retry re-runs the question from scratch.
 
-We report `discard-all` as the headline setting even where `discard-all + retry` scores higher,
-because every retry re-runs the question from scratch and buys its points with a multiple of the
-search budget.
-
-## Data Pipeline
+## How Iris Is Built
 
 <div align="center">
 <img src="./figures/data_pipeline.png" width="88%"/>
 </div>
 
-A seed page is chosen so that it fixes the target answer, then expanded along its out-links into a
-local subgraph. The subgraph is distilled into an entity graph, a question is authored over a path
-of several coupled relations, and every non-answer entity is rewritten into a descriptive
-reference. A dual-criteria pass keeps only questions that a reference model fails closed-book but
-solves once the entity graph is supplied.
+- **Training questions that cannot be shortcut.** Questions are reverse-constructed from the
+  hyperlink structure of a web corpus, and every non-answer entity is rewritten into a descriptive
+  reference so the intended multi-hop path is the only path. A question is kept only if a reference
+  model fails it closed-book but solves it once the supporting evidence is supplied.
+- **Two-level trajectory filtering.** Whole trajectories are gated on correctness, degeneracy, and
+  search depth; individual turns are then labeled by a judge whose rubric is induced from the data
+  rather than written by hand.
+- **SFT–RL climbing.** Each round of RL explores; its hardest solved and most efficient rollouts are
+  consolidated by a supervised pass; RL resumes from there.
 
-## Repository
-
-```bash
-git clone git@github.com:AllSpark-Research/Iris.git
-```
+---
 
 Serving code and the evaluation harness are not part of this release.
