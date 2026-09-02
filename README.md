@@ -107,6 +107,5 @@ bash scripts/run_eval.sh --base-url http://127.0.0.1:21234/v1 --llm-config iris-
 
 The data construction and training pipelines are coming soon.
 
-Questions or collaboration: open an
-[issue](https://github.com/AllSpark-Research/Iris/issues), or reach us at
+Questions or collaboration: reach us at
 <liuziyua22@mails.tsinghua.edu.cn>.
