@@ -1,0 +1,63 @@
+# conf/llm/default.yaml - Default LLM configuration
+provider: "openai" # openai | qwen | azure  (all OpenAI-compatible)
+model_name: ""
+async_client: false
+temperature: 0.3
+top_p: 1.0
+min_p: 0.0
+top_k: -1
+max_tokens: 4096
+# Client-side context ceiling; also what the discard-all threshold is measured against.
+max_context_length: 262144
+# Length-truncation retry budget (INDEPENDENT of transient-error retry).
+# When a single response is cut off by max_tokens (finish_reason "length"),
+# the client re-issues the SAME request with a larger max_tokens
+# (×1.5, capped at max_context_length - prompt_tokens) up to this many times
+# before giving up and returning the truncated response (which the orchestrator
+# then turns into a final summary — the legacy behaviour). Set 0 to disable.
+length_retry_max: 5
+api_key: ""
+base_url: "${oc.env:OPENAI_BASE_URL,http://localhost:8000/v1}"
+repetition_penalty: 1.0
+presence_penalty: 0.0
+# Tool calling mode for OpenAI-compatible providers:
+#   "mcp_xml"   - (default) Tools described in system prompt, model outputs XML tags, parsed by regex
+#   "native_fc" - Standard OpenAI function calling via API tools parameter
+tool_call_mode: "mcp_xml"
+# How to handle model's reasoning/thinking content (from --reasoning-parser or <think> tags).
+# Four modes available:
+#   "discard" - Strip thinking from the response and don't save it.
+#   "log_only" - Strip thinking from response context, but save to "_reasoning_content"
+#                metadata in message_history for distillation training data collection.
+#                These fields are NOT sent back to the API but ARE preserved in log JSON.
+#   "context" - Keep thinking in response context by EMBEDDING it as a <think>...</think>
+#               block inside the assistant `content` (LLM sees its own prior reasoning in
+#               subsequent turns, like GLM-5's ri in the trajectory). Also saves to
+#               "_reasoning_content" for logging. Works on any server (no special switch).
+#   "preserve" - Native preserve_thinking (Kimi K2.6 / Qwen). Keeps `content` CLEAN and
+#                carries prior reasoning back via the dedicated `reasoning_content` field,
+#                exactly as the official API expects; the server chat template re-renders
+#                <think>. Requires the matching server switch via `thinking_extra_body`
+#                (see below). Also saves "_reasoning_content" for logging.
+# Backward compatible: old `save_reasoning_content: false` maps to "discard", `true` to "log_only".
+reasoning_content_mode: "context"
+
+# Endpoint-specific extra_body fragment to enable (and, with reasoning_content_mode:
+# "preserve", retain) the model's thinking. Deep-merged into every request's extra_body.
+# Declaring it per-config keeps model-name branching out of the client code. Examples:
+#   Kimi MaaS (official API):  {thinking: {type: enabled, keep: all}}
+#   Kimi/Qwen via SGLang/vLLM: {chat_template_kwargs: {thinking: true, preserve_thinking: true}}
+# Leave unset (null) for models that don't need it (e.g. the legacy qwen3 default is
+# applied automatically when this is empty).
+thinking_extra_body: null
+
+# Extended thinking / reasoning configuration
+# For GPT-5 models (OpenAI/Azure):
+#   reasoning_effort: "low"/"medium"/"high" — controls reasoning depth
+#     - null/not set: model does not use internal reasoning (reasoning_tokens=0)
+#     - "low": minimal reasoning
+#     - "medium": moderate reasoning
+#     - "high": full reasoning
+thinking_enabled: false
+thinking_budget_tokens: 10000
+reasoning_effort: null

@@ -1,0 +1,33 @@
+# conf/agent/serper_search_agent.yaml
+#
+# Single-backend search/scrape agent powered by Serper.
+# One MCP server (searching_serper_mcp_server) exposes BOTH tools:
+#   - tool-serper-search__web_search        (Serper /search, Google SERP)
+#   - tool-serper-search__scrape_website    (Serper /scrape + LLM summary)
+#
+# This is the configuration behind every number in the report. Requires
+# SERPER_API_KEY plus the SUMMARY_LLM_* vars, which scrape_website always uses
+# to condense a page against the caller's `info_to_extract`.
+defaults:
+  - default
+  - _self_
+
+main_agent:
+  tools:
+    - tool-serper-search
+  tool_blacklist: []  # both web_search and scrape_website exposed
+  max_turns: 600  # Maximum number of turns for main agent execution
+
+sub_agents:
+
+# ============================================================
+# Context Management Strategies (inspired by GLM-5 §4.2.4)
+# ------------------------------------------------------------
+# Identical across all three agent configs, so numbers from different
+# search/scrape backends stay directly comparable: only the backend differs,
+# never the context-management strategy.
+# ============================================================
+keep_tool_result: -1
+context_discard_threshold: 0  # HCM discard-all token threshold (0 = disabled).
+context_compress_limit: 0     # Max full-pipeline retries per question (>0 = enabled, 0 = disabled).
+retry_with_summary: True

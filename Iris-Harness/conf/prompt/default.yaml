@@ -1,0 +1,12 @@
+# conf/prompt/default.yaml
+#
+# System-prompt style. The system prompt has two parts:
+#   1. header    — injected by the LLM client: the tool schemas (mcp_xml mode)
+#                  or a short tool note (native_fc mode), plus today's date.
+#                  Always client-controlled; not configurable here.
+#   2. objective — chosen by this file. style="default" uses
+#                  generate_agent_specific_system_prompt(agent_type=...).
+#
+# To supply your own objective section, add conf/prompt/<name>.yaml with
+# style: "custom" and put the text in `template`.
+style: "default"

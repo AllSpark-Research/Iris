@@ -1,0 +1,13 @@
+Iris-Harness
+Copyright 2026 AllSpark Research
+
+This product includes software developed at MiroMind
+(https://github.com/MiroMindAI/MiroFlow), licensed under the Apache License,
+Version 2.0. The agent loop under src/, the MCP tool layer under tools/, and
+the benchmark runner under benchmarks/ are derived from MiroFlow; files that
+carry a "Copyright (c) 2025 MiroMind" header retain that attribution.
+
+Modifications by AllSpark Research include the context-management strategies
+(discard-all, retry, recency-K), the append-only conversation log and marker
+replay, agent-side self-verification, the DeepSearchQA F1 grader, and the
+benchmark preparation and evaluation drivers.

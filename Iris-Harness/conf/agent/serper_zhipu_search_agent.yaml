@@ -1,0 +1,40 @@
+# conf/agent/serper_zhipu_search_agent.yaml
+#
+# Hybrid search/scrape agent: Serper for web_search, Zhipu for scrape_website.
+# Zhipu's scraper is tuned for Chinese-heavy pages (SOGOU / Baidu cache,
+# CN news / forums / wechat-style content) — pair it with Serper SERP for
+# good Google-coverage on queries while keeping Zhipu's CN scrape quality.
+#
+# Topology:
+#   - tool-serper-search exposes BOTH web_search and scrape_website,
+#     but we blacklist its scrape_website here so Zhipu wins.
+#   - tool-zhipu-search exposes BOTH web_search and scrape_website,
+#     but we blacklist its web_search here so Serper wins.
+#
+# Requires: SERPER_API_KEY, ZHIPU_AI_KEY, and the SUMMARY_LLM_* vars —
+# scrape_website always runs LLM extraction, so they are not optional.
+defaults:
+  - default
+  - _self_
+
+main_agent:
+  tools:
+    - tool-serper-search
+    - tool-zhipu-search
+  tool_blacklist:
+    - [ "tool-serper-search", "scrape_website" ]   # Use Zhipu's scrape instead
+    - [ "tool-zhipu-search",  "web_search"      ]  # Use Serper's SERP instead
+  max_turns: 600  # Maximum number of turns for main agent execution
+
+sub_agents:
+
+# ============================================================
+# Context Management Strategies (inspired by GLM-5 §4.2.4)
+# ------------------------------------------------------------
+# Identical to serper_search_agent.yaml, so Serper-scrape and Zhipu-scrape
+# numbers stay directly comparable: only the scrape backend differs.
+# ============================================================
+keep_tool_result: -1
+context_discard_threshold: 0  # HCM discard-all token threshold (0 = disabled).
+context_compress_limit: 0     # Max full-pipeline retries per question (>0 = enabled, 0 = disabled).
+retry_with_summary: True

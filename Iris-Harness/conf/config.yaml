@@ -1,0 +1,15 @@
+# conf/config.yaml
+defaults:
+  - llm: default
+  - agent: default
+  - benchmark: default
+  - prompt: default  # system-prompt style preset (see conf/prompt/*.yaml)
+  - _self_  # Allows variables to be defined at the top of this file
+
+hydra:
+  run:
+    dir: logs/debug
+
+# You can define some top-level or default parameters here
+project_name: "iris-harness"
+debug_dir: "logs/debug"

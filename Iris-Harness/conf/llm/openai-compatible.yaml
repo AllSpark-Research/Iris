@@ -1,0 +1,25 @@
+# Generic OpenAI-compatible endpoint — use this to run the harness against any
+# other model (open-weight served locally, or a hosted API).
+#
+#   export SGLANG_BASE_URL=http://127.0.0.1:8000/v1
+#   ... llm=openai-compatible llm.model_name=<served-model-name>
+#
+# `tool_call_mode` and `reasoning_content_mode` are the two knobs that must
+# match the endpoint: use native_fc when the server exposes OpenAI function
+# calling, and pick `preserve` over `context` for models that carry thinking in
+# a dedicated `reasoning_content` field.
+defaults:
+  - default
+  - _self_
+
+provider: "openai"
+model_name: "${oc.env:MODEL_NAME,model}"
+api_key: "${oc.env:OPENAI_API_KEY,EMPTY}"
+base_url: "${oc.env:SGLANG_BASE_URL,http://localhost:8000/v1}"
+max_context_length: 262144
+max_tokens: 16384
+temperature: 1.0
+top_p: 0.95
+
+tool_call_mode: "native_fc"
+reasoning_content_mode: "context"

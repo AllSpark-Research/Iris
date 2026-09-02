@@ -5,7 +5,7 @@
 ---
 
 <div align="center">
-🤗 <a href="https://huggingface.co/AllSpark-Research"><b>Hugging Face</b></a>&nbsp;&nbsp;|&nbsp;&nbsp;
+🤗 <a href="https://huggingface.co/collections/AllSpark-Research/iris"><b>Hugging Face</b></a>&nbsp;&nbsp;|&nbsp;&nbsp;
 💻 <a href="https://github.com/AllSpark-Research/Iris"><b>GitHub</b></a>&nbsp;&nbsp;|&nbsp;&nbsp;
 🔬 <a href="https://github.com/AllSpark-Research"><b>AllSpark Research</b></a>
 </div>
@@ -62,8 +62,8 @@ under its own context management. <sup>r</sup> reproduced by the XYZ-Aquila team
 
 | Model | Base | Params (total / active) | Context | Download |
 | --- | --- | --- | --- | --- |
-| **Iris-mini** | Qwen3.6-35B-A3B | 35B / 3B | 256K | _coming soon_ |
-| **Iris-pro** | Qwen3.5-397B-A17B | 397B / 17B | 256K | _coming soon_ |
+| **Iris-mini** | Qwen3.6-35B-A3B | 35B / 3B | 256K | [🤗 Iris-mini](https://huggingface.co/AllSpark-Research/Iris-mini) |
+| **Iris-pro** | Qwen3.5-397B-A17B | 397B / 17B | 256K | [🤗 Iris-pro](https://huggingface.co/AllSpark-Research/Iris-pro) |
 
 ## Context Management
 
@@ -86,10 +86,23 @@ tool set, one context limit, and one judge.
 | discard-all + retry | **90.3** | **85.1** | **93.4** | **56.6** |
 
 `discard-all` clears the accumulated tool history and restarts from the question once the running
-context crosses a threshold. `retry` restarts a failed episode, carrying forward a short summary of
-what was already ruled out. We report `discard-all` as the headline setting even where adding
+context crosses a threshold. `retry` restarts an episode that ended without a parseable answer, carrying forward a short
+summary of what was already ruled out. We report `discard-all` as the headline setting even where adding
 `retry` scores higher.
+
+## Evaluation
+
+[`Iris-Harness/`](./Iris-Harness) is the harness behind every number above: the agent loop, the two
+tools, the context-management strategies, the four benchmarks and the graders. It runs against any
+OpenAI-compatible endpoint.
+
+```bash
+cd Iris-Harness && uv sync
+uv run python data/prepare_data.py
+bash scripts/run_eval.sh --base-url http://127.0.0.1:21234/v1 --llm-config iris-mini \
+  --benchmarks "browsecomp:0:1" --context-discard-threshold 131072
+```
 
 ---
 
-Key components of the data construction, training, and evaluation pipelines are coming soon.
+The data construction and training pipelines are coming soon.

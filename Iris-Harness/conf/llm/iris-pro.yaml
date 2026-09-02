@@ -1,0 +1,24 @@
+# Iris-pro — 397B-A17B, post-trained from Qwen3.5-397B-A17B.
+#
+# Serve the weights behind any OpenAI-compatible server (we use SGLang) and
+# point SGLANG_BASE_URL at it, e.g.
+#   export SGLANG_BASE_URL=http://127.0.0.1:21234/v1
+defaults:
+  - default
+  - _self_
+
+provider: "openai"
+model_name: "Iris-pro"
+api_key: "EMPTY"
+base_url: "${oc.env:SGLANG_BASE_URL,http://localhost:21234/v1}"
+max_context_length: 262144
+max_tokens: 16384
+temperature: 1.0
+top_p: 0.95
+
+tool_call_mode: "native_fc"
+reasoning_content_mode: "context"
+thinking_extra_body:
+  chat_template_kwargs:
+    enable_thinking: true
+    preserve_thinking: true

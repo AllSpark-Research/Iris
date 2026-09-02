@@ -1,0 +1,63 @@
+# conf/agent/serper_jina_search_agent.yaml
+#
+# Hybrid search/scrape agent: Serper for web_search, Jina Reader for
+# scrape_website. Jina returns clean markdown and can render JS when asked, so it
+# tends to beat Serper's /scrape on SPA-heavy and paywall-lite pages. See the
+# ENGINE NOTE below: the default engine is `direct`, not `browser`.
+#
+# Topology:
+#   - tool-serper-search exposes BOTH web_search and scrape_website,
+#     but we blacklist its scrape_website here so Jina wins.
+#   - tool-jina-scrape exposes ONLY scrape_website (no web_search).
+#
+# Because both servers name the tool `scrape_website` with an identical
+# signature and identical JSON output contract, this swap is invisible to the
+# model: the flat tool name it sees is `tool-jina-scrape__scrape_website` and
+# everything else (prompting, dedup, truncation, trace format) is unchanged.
+#
+# Requires: SERPER_API_KEY, JINA_API_KEY, and the SUMMARY_LLM_* vars (Jina
+# scrape ALWAYS runs the LLM extraction — there is no raw-content passthrough).
+#
+# NETWORK NOTE: `*.jina.ai` is DNS-blocked on some internal networks. Set
+#   JINA_PROXY=http://<host>:<port>
+# in the environment (or .env) and it is injected into the tool-jina-scrape
+# subprocess ONLY. That subprocess proxies just its outbound web fetches; the
+# summary-LLM call and every other server/tool stay on a direct connection, so
+# concurrently running evals are unaffected. Leave JINA_PROXY empty when Jina is
+# directly reachable.
+#
+# ENGINE NOTE (measured, do not "fix" back to the docs example): the Jina docs
+# suggest `X-Engine: browser`, but on academic pages that returns the caption of
+# a lazily-rendered SVG figure instead of the document:
+#     arxiv.org/html/2509.13313v3   browser -> 328 B      direct -> 80,101 B
+# Wikipedia is byte-identical on both engines and `direct` is ~4x faster, so
+# JINA_ENGINE defaults to `direct` with `browser` kept as the escalation rung.
+# Jina's cache can also serve a POISONED entry (423 B + "cached snapshot"
+# warning), so a thin body triggers a no-cache retry. Knobs, all optional:
+#   JINA_ENGINE / JINA_FALLBACK_ENGINE / JINA_NO_CACHE
+#   JINA_THIN_CONTENT_CHARS (escalate below N chars, default 1200)
+#   JINA_MIN_USABLE_CHARS   (return verbatim below N chars, default 200)
+defaults:
+  - default
+  - _self_
+
+main_agent:
+  tools:
+    - tool-serper-search
+    - tool-jina-scrape
+  tool_blacklist:
+    - [ "tool-serper-search", "scrape_website" ]   # Use Jina Reader instead
+  max_turns: 600  # Maximum number of turns for main agent execution
+
+sub_agents:
+
+# ============================================================
+# Context Management Strategies (inspired by GLM-5 §4.2.4)
+# ------------------------------------------------------------
+# Identical to serper_search_agent.yaml, so Serper-scrape and Jina-scrape
+# numbers stay directly comparable: only the scrape backend differs.
+# ============================================================
+keep_tool_result: -1
+context_discard_threshold: 0  # HCM discard-all token threshold (0 = disabled).
+context_compress_limit: 0     # Max full-pipeline retries per question (>0 = enabled, 0 = disabled).
+retry_with_summary: True

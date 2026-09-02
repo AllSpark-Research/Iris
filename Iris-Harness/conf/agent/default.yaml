@@ -1,0 +1,56 @@
+# conf/agent/default.yaml
+#
+# Base agent config. Every concrete agent inherits from this and overrides the
+# tool list; on its own it has no tools and cannot run. Tool ids are wired to
+# MCP servers in src/config/settings.py; the system prompts live in
+# src/utils/prompt_utils.py.
+main_agent:
+  tools: []
+  tool_blacklist: []   # [server_id, tool_name] pairs to hide from the model
+  max_turns: 600       # hard cap on tool-use turns before a forced summary
+
+sub_agents:
+
+# ── Context management ──────────────────────────────────────────────────────
+# All three are off by default; the report's regimes are produced by turning
+# them on from the command line (see scripts/run_eval.sh --help).
+
+# recency-K: send only the last N tool results in full and fold the earlier ones
+# into placeholders. Thinking and tool calls are always kept.
+#   -1 = keep everything, 0 = fold everything, N > 0 = keep the last N
+keep_tool_result: -1
+
+# discard-all: once the prompt crosses this many tokens, drop the accumulated
+# tool history and restart from the question. 0 disables.
+context_discard_threshold: 0
+
+# retry: when an episode ends without a parseable answer, restart it from
+# scratch at most this many times. A wrong answer is never retried. 0 disables.
+context_compress_limit: 0
+
+# Carry a short summary of what was already ruled out into each retry.
+# False gives a clean restart with no memory of the failed attempt.
+retry_with_summary: true
+
+# ── Answer format ───────────────────────────────────────────────────────────
+# Must match how the model was trained, or answers are lost to format failures.
+#   boxed:  append a \boxed{} instruction, always run a final summary, and
+#           extract the answer from \boxed{}.
+#   direct: no format instruction; the last assistant message is the answer.
+#           On an abnormal ending (turn cap, context overflow) a lightweight
+#           summary asks the model for its best answer in prose.
+answer_mode: "boxed"
+
+# ── Self-verification (inference-time, off by default) ──────────────────────
+# After the main agent answers, an independent verifier agent — same tools,
+# verifier system prompt — checks the answer condition by condition and emits a
+# JSON verdict. On a confident "incorrect" the ORIGINAL task is re-answered from
+# scratch and re-verified, up to max_reanswer_attempts. Costs roughly one extra
+# episode per task; none of the reported numbers use it.
+self_verification:
+  enabled: false
+  max_reanswer_attempts: 1          # 0 = verify only (annotate, never replace)
+  verification_max_turns: null      # null = reuse main_agent.max_turns
+  unparseable_verdict: "correct"    # verdict when the verifier's output won't parse
+  use_candidate_hints: false        # show the verifier the mid-run \boxed{} candidates
+  max_candidate_hints: 5

@@ -1,0 +1,875 @@
+# Copyright (c) 2025 MiroMind
+# This source code is licensed under the Apache 2.0 License.
+
+import glob
+import json
+import math
+import os
+import re
+from dataclasses import dataclass
+from datetime import datetime
+from io import StringIO
+from typing import Dict, List, Optional, Tuple
+
+# Time estimation constants
+DEFAULT_TASK_TIME_MINUTES = 3.5
+MINUTES_PER_HOUR = 60
+HOURS_PER_DAY = 24
+MINUTES_PER_DAY = MINUTES_PER_HOUR * HOURS_PER_DAY
+
+# Progress bar configuration
+PROGRESS_BAR_WIDTH = 20
+GREEN_THRESHOLD = 80
+YELLOW_THRESHOLD = 60
+ORANGE_THRESHOLD = 40
+
+# Judge result patterns for correctness
+CORRECT_RESULTS = ["CORRECT", "SUCCESS"]
+SUCCESS_PATTERNS = ["PASS_AT_K_SUCCESS"]
+
+# Log file configuration
+LOG_FILE_PREFIX = "progress_analysis_"
+LOG_FILE_TIMESTAMP_FORMAT = "%Y%m%d_%H%M%S"
+
+
+def create_progress_bar(percentage: float, width: int = PROGRESS_BAR_WIDTH) -> str:
+    """Create a visual progress bar for percentage display"""
+    filled = int(width * percentage / 100)
+    bar = "█" * filled + "░" * (width - filled)
+
+    # Add color based on percentage
+    if percentage >= GREEN_THRESHOLD:
+        color = "\033[92m"  # Green
+    elif percentage >= YELLOW_THRESHOLD:
+        color = "\033[93m"  # Yellow
+    elif percentage >= ORANGE_THRESHOLD:
+        color = "\033[33m"  # Orange
+    else:
+        color = "\033[91m"  # Red
+
+    reset = "\033[0m"
+    return f"{color}[{bar}] {percentage:.1f}%{reset}"
+
+
+def find_earliest_start_time(completed_files: List[str]) -> Optional[datetime]:
+    """Find the earliest start time from all completed files"""
+    earliest_time = None
+
+    for file_path in completed_files:
+        try:
+            with open(file_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+
+            if "start_time" in data:
+                # Parse UTC time and convert to naive datetime
+                start_time_str = data["start_time"]
+                if start_time_str.endswith("Z"):
+                    start_time_str = start_time_str[:-1] + "+00:00"
+                start_time = datetime.fromisoformat(start_time_str)
+                # Convert to naive datetime for comparison
+                start_time = start_time.replace(tzinfo=None)
+
+                if earliest_time is None or start_time < earliest_time:
+                    earliest_time = start_time
+
+        except (json.JSONDecodeError, KeyError, ValueError, OSError):
+            continue  # Skip files with invalid timing data
+
+    return earliest_time
+
+
+def find_latest_end_time(completed_files: List[str]) -> Optional[datetime]:
+    """Find the latest end time from all completed files"""
+    latest_time = None
+
+    for file_path in completed_files:
+        try:
+            with open(file_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+
+            if "end_time" in data:
+                # Parse UTC time and convert to naive datetime
+                end_time_str = data["end_time"]
+                if end_time_str.endswith("Z"):
+                    end_time_str = end_time_str[:-1] + "+00:00"
+                end_time = datetime.fromisoformat(end_time_str)
+                # Convert to naive datetime for comparison (UTC-naive)
+                end_time = end_time.replace(tzinfo=None)
+
+                if latest_time is None or end_time > latest_time:
+                    latest_time = end_time
+
+        except (json.JSONDecodeError, KeyError, ValueError, OSError):
+            continue  # Skip files with invalid timing data
+
+    # If no valid end_time found, return current UTC (naive)
+    return latest_time or datetime.now().replace(tzinfo=None)
+
+
+def calculate_mean_and_std(values: List[float]) -> Tuple[float, float]:
+    """Calculate mean and standard deviation of a list of values"""
+    if not values:
+        return 0.0, 0.0
+
+    n = len(values)
+    mean = sum(values) / n
+
+    if n == 1:
+        return mean, 0.0
+
+    variance = sum((x - mean) ** 2 for x in values) / (n - 1)
+    std = math.sqrt(variance)
+
+    return mean, std
+
+
+def estimate_completion_time(
+    total_tasks: int, completed_tasks: int, completed_files: List[str]
+) -> str:
+    """Estimate completion time based on overall progress rate from all completed tasks"""
+    if completed_tasks == 0:
+        return "Cannot estimate (no completed tasks)"
+
+    # Check if all tasks are completed
+    if completed_tasks >= total_tasks:
+        return "All tasks completed"
+
+    remaining_tasks = total_tasks - completed_tasks
+
+    # Use overall completion rate from all successfully completed tasks
+    earliest_start = find_earliest_start_time(completed_files)
+    latest_end = find_latest_end_time(completed_files)
+
+    if earliest_start is None:
+        # Fallback to default estimation if no valid timing data
+        estimated_minutes = remaining_tasks * DEFAULT_TASK_TIME_MINUTES
+    else:
+        # Calculate overall elapsed time
+        elapsed_time = latest_end - earliest_start
+        elapsed_minutes = elapsed_time.total_seconds() / 60
+
+        if elapsed_minutes <= 0:
+            return "Cannot estimate (time interval too short)"
+
+        # Calculate average time per task based on all completed tasks
+        avg_minutes_per_task = elapsed_minutes / completed_tasks
+        if avg_minutes_per_task <= 0:
+            return "Cannot estimate (invalid time per task)"
+
+        estimated_minutes = remaining_tasks * avg_minutes_per_task
+
+    # Format the estimate in minutes
+    return f"~{int(estimated_minutes)} minutes"
+
+
+@dataclass
+class TaskStats:
+    """Statistics for a single task"""
+
+    completed: int = 0
+    running: int = 0
+    failed: int = 0
+    judge_correct: int = 0
+    total: int = 0
+
+    # Completed files for timing analysis
+    completed_files: List[str] = None
+
+    # Turn statistics
+    total_turns: int = 0
+    completed_tasks_with_turns: int = 0
+
+    # No boxed content found statistics
+    no_boxed_found: int = 0
+
+    def __post_init__(self):
+        if self.completed_files is None:
+            self.completed_files = []
+
+    @property
+    def judge_accuracy(self) -> float:
+        """Calculate judge accuracy percentage"""
+        return (
+            (self.judge_correct / self.completed * 100) if self.completed > 0 else 0.0
+        )
+
+    @property
+    def completion_rate(self) -> float:
+        """Calculate completion rate percentage"""
+        return (self.completed / self.total * 100) if self.total > 0 else 0.0
+
+    @property
+    def average_turns(self) -> float:
+        """Calculate average turns per completed task"""
+        return (
+            (self.total_turns / self.completed_tasks_with_turns)
+            if self.completed_tasks_with_turns > 0
+            else 0.0
+        )
+
+
+@dataclass
+
+
+@dataclass
+class SummaryStats:
+    """Summary statistics across all runs"""
+
+    total_tasks: int = 0
+    total_completed: int = 0
+    total_running: int = 0
+    total_failed: int = 0
+    total_judge_correct: int = 0
+    total_no_boxed_found: int = 0
+
+    @property
+    def total_judge_accuracy(self) -> float:
+        """Calculate overall judge accuracy percentage"""
+        return (
+            (self.total_judge_correct / self.total_completed * 100)
+            if self.total_completed > 0
+            else 0.0
+        )
+
+    def average_run_accuracy(
+        self, run_stats_list: List[Tuple[str, TaskStats]]
+    ) -> Tuple[float, float]:
+        """Calculate overall accuracy (mean) and standard deviation across individual runs"""
+        if not run_stats_list:
+            return 0.0, 0.0
+
+        # Mean accuracy is the overall accuracy (weighted average)
+        # This matches the OVERALL JUDGE ACCURACY calculation
+        mean = self.total_judge_accuracy
+
+        # Standard deviation is calculated from individual run accuracies
+        accuracies = [
+            stats.judge_accuracy for _, stats in run_stats_list if stats.completed > 0
+        ]
+
+        if not accuracies:
+            return mean, 0.0
+
+        _, std = calculate_mean_and_std(accuracies)
+        return mean, std
+
+    @property
+    def total_completion_rate(self) -> float:
+        """Calculate overall completion rate percentage"""
+        return (
+            (self.total_completed / self.total_tasks * 100)
+            if self.total_tasks > 0
+            else 0.0
+        )
+
+
+@dataclass
+
+
+class ProgressChecker:
+    """Main class for checking benchmark progress"""
+
+    def __init__(self, target_path: str, task_per_run: int, data_path: str):
+        self.target_path = target_path
+        self.run_dirs: List[str] = []
+        self.total_tasks_per_run = task_per_run
+
+        # Load benchmark data
+        self._load_benchmark_data(data_path)
+
+    def _load_benchmark_data(self, data_path) -> None:
+        """Load benchmark data and configuration"""
+        try:
+            # Load benchmark data if available
+            if os.path.exists(data_path):
+                with open(data_path) as f:
+                    benchmark_data = [json.loads(line) for line in f.readlines()]
+                print(f"Loaded {len(benchmark_data)} tasks from {data_path}")
+        except Exception as e:
+            print(f"Warning: Could not load data: {e}")
+
+    def find_run_directories(self) -> List[str]:
+        """Find all run directories in the target path"""
+        run_dirs = []
+
+        if not os.path.exists(self.target_path):
+            raise FileNotFoundError(f"Path '{self.target_path}' does not exist")
+
+        # Check if target_path itself is a run directory
+        if os.path.basename(self.target_path).startswith("run_"):
+            run_dirs.append(self.target_path)
+        else:
+            # Find run_* directories under target_path
+            try:
+                for item in os.listdir(self.target_path):
+                    item_path = os.path.join(self.target_path, item)
+                    if os.path.isdir(item_path) and item.startswith("run_"):
+                        run_dirs.append(item_path)
+            except PermissionError:
+                raise PermissionError(
+                    f"No permission to access directory '{self.target_path}'"
+                )
+
+        # Sort by run number
+        run_dirs.sort(key=lambda x: self._extract_run_number(x))
+
+        if not run_dirs:
+            raise ValueError(f"No run directories found in '{self.target_path}'")
+
+        return run_dirs
+
+    def _extract_run_number(self, path: str) -> int:
+        """Extract run number from directory path for sorting"""
+        basename = os.path.basename(path)
+        parts = basename.split("_")
+        if len(parts) > 1 and parts[1].isdigit():
+            return int(parts[1])
+        return 0
+
+    def _extract_task_id(self, filename: str, task_id_pattern: str) -> Optional[str]:
+        """Extract task ID from filename"""
+        match = re.match(task_id_pattern, filename)
+        return match.group(1) if match else None
+
+    def _get_latest_task_files(self, run_dir: str, task_id_pattern: str) -> List[str]:
+        """Get the latest task file for each task ID in a run directory"""
+        json_files = glob.glob(os.path.join(run_dir, "task_*.json"))
+
+        if not json_files:
+            return []
+
+        # Group by task ID, keep only the latest file for each task
+        task_groups: Dict[str, Dict] = {}
+
+        for json_file in json_files:
+            filename = os.path.basename(json_file)
+            task_id = self._extract_task_id(filename, task_id_pattern)
+
+            if task_id:
+                try:
+                    # Read the JSON file to get the start_time
+                    with open(json_file, "r", encoding="utf-8") as f:
+                        data = json.load(f)
+
+                    start_time_str = data.get("start_time", "")
+                    if start_time_str:
+                        # Parse the ISO format timestamp
+                        from datetime import datetime
+
+                        start_time = datetime.fromisoformat(
+                            start_time_str.replace("Z", "+00:00")
+                        )
+                        start_timestamp = start_time.timestamp()
+                    else:
+                        # Fallback to file modification time if start_time is not available
+                        start_timestamp = os.path.getmtime(json_file)
+
+                    if (
+                        task_id not in task_groups
+                        or start_timestamp > task_groups[task_id]["timestamp"]
+                    ):
+                        task_groups[task_id] = {
+                            "file": json_file,
+                            "timestamp": start_timestamp,
+                        }
+                except (json.JSONDecodeError, ValueError, OSError) as e:
+                    # Fallback to file modification time if JSON parsing fails
+                    print(f"Warning: Could not parse {json_file}: {e}")
+                    file_mtime = os.path.getmtime(json_file)
+                    if (
+                        task_id not in task_groups
+                        or file_mtime > task_groups[task_id]["timestamp"]
+                    ):
+                        task_groups[task_id] = {
+                            "file": json_file,
+                            "timestamp": file_mtime,
+                        }
+
+        return [info["file"] for info in task_groups.values()]
+
+    def _is_task_completed(self, data: Dict) -> bool:
+        """Check if a task is completed based on its data"""
+        end_time = data.get("end_time", "")
+        error = data.get("error", "")
+        status = data.get("status", "")
+        final_answer = data.get("final_boxed_answer", "")
+
+        return (
+            (end_time != "" and error == "")
+            or (status == "completed")
+            or (final_answer != "" and error == "")
+        )
+
+    def _is_judge_correct(self, judge_result) -> bool:
+        """Determine if LLM judge result indicates correct answer"""
+        if isinstance(judge_result, bool):
+            return judge_result
+        elif isinstance(judge_result, str):
+            result_str = judge_result.upper()
+            return (
+                result_str in CORRECT_RESULTS
+                or any(pattern in result_str for pattern in SUCCESS_PATTERNS)
+                or result_str.lower() in ["true", "1", "yes", "pass"]
+            )
+        elif isinstance(judge_result, (int, float)):
+            return judge_result > 0
+        elif isinstance(judge_result, dict):
+            return judge_result.get("correct", False) or judge_result.get(
+                "is_correct", False
+            )
+        return False
+
+    def _calculate_turns(self, data: Dict) -> int:
+        """Calculate number of turns from task data (excluding system prompt)"""
+        try:
+            main_agent_history = data.get("main_agent_message_history", {})
+            message_history = main_agent_history.get("message_history", [])
+
+            if not message_history:
+                return 0
+
+            # Filter out system messages and count total messages, then divide by 2
+            # Turn count = (total messages excluding system) / 2
+            non_system_messages = [
+                msg for msg in message_history if msg.get("role") != "system"
+            ]
+
+            # Each turn consists of user + assistant, so divide by 2
+            turn_count = len(non_system_messages) // 2
+
+            return turn_count
+        except (KeyError, TypeError, IndexError):
+            return 0
+
+    def analyze_run_directory(
+        self, run_dir: str, task_id_pattern: str
+    ) -> Tuple[TaskStats, Dict[str, bool]]:
+        """Analyze a single run directory and return statistics and task results
+
+        Returns:
+            Tuple[TaskStats, Dict[str, bool]]: Statistics and a mapping of task_id -> is_correct
+        """
+        latest_files = self._get_latest_task_files(run_dir, task_id_pattern)
+
+        # Use the correct total tasks
+        stats = TaskStats(total=self.total_tasks_per_run)
+        completed_files = []  # Track completed files for timing analysis
+        task_results = {}  # Track task_id -> is_correct mapping
+
+        for json_file in latest_files:
+            try:
+                with open(json_file, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+
+                status = data.get("status", "")
+
+                if status == "running":
+                    stats.running += 1
+                elif self._is_task_completed(data):
+                    stats.completed += 1
+                    completed_files.append(json_file)  # Track for timing analysis
+
+                    # Check judge result for completed tasks
+                    judge_result = data.get("final_judge_result", None)
+                    is_correct = judge_result is not None and self._is_judge_correct(
+                        judge_result
+                    )
+                    if is_correct:
+                        stats.judge_correct += 1
+
+                    # Extract task ID and store result
+                    filename = os.path.basename(json_file)
+                    task_id = self._extract_task_id(filename, task_id_pattern)
+                    if task_id:
+                        task_results[task_id] = is_correct
+
+                    # Check if final_boxed_answer contains "No \\boxed{} content found"
+                    final_boxed_answer = data.get("final_boxed_answer", "")
+                    if (
+                        isinstance(final_boxed_answer, str)
+                        and "No \\boxed{} content found" in final_boxed_answer
+                    ):
+                        stats.no_boxed_found += 1
+
+                    # Calculate turns for completed tasks
+                    turns = self._calculate_turns(data)
+                    if turns > 0:
+                        stats.total_turns += turns
+                        stats.completed_tasks_with_turns += 1
+                else:
+                    stats.failed += 1
+
+            except (json.JSONDecodeError, IOError) as e:
+                # Skip files that are being written or corrupted
+                if "Expecting value" in str(e) or "line 1 column 1" in str(e):
+                    continue  # Skip corrupted/empty files
+                print(f"Warning: Could not parse {json_file}: {e}")
+                stats.failed += 1
+            except Exception as e:
+                print(f"Warning: Unexpected error processing {json_file}: {e}")
+                stats.failed += 1
+
+        # Store completed files in stats for timing analysis
+        stats.completed_files = completed_files
+        return stats, task_results
+
+    def run_analysis(
+        self, benchmark_name_std: str, task_id_pattern: str
+    ) -> SummaryStats:
+        """Run the complete analysis and return summary statistics"""
+        self.run_dirs = self.find_run_directories()
+        summary = SummaryStats()
+        run_stats_list = []  # Store statistics for each run
+        all_completed_files = []  # Collect all completed files for timing analysis
+        all_task_results = {}  # Collect task_id -> list of is_correct across all runs
+
+        print()
+        print("=" * 80)
+        print(f"Analyzing benchmark progress for: {self.target_path}")
+        print(f"Generated at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        print("=" * 80)
+
+        # Analyze each run directory
+        for run_dir in self.run_dirs:
+            run_name = os.path.basename(run_dir)
+            stats, task_results = self.analyze_run_directory(run_dir, task_id_pattern)
+
+            if stats.total == 0:
+                print(f"{run_name}: No task files found")
+                print()
+                continue
+
+            # Display run statistics in a single line
+            run_info = f"[{run_name}] Completed: {stats.completed} | Running: {stats.running} | Failed: {stats.failed}"
+
+            # Add accuracy information
+            if stats.completed > 0:
+                run_info += f" | Accuracy: {stats.judge_correct}/{stats.completed} ({stats.judge_accuracy:.1f}%)"
+
+                # Add average turns information (show even if some tasks are still running)
+                if stats.completed_tasks_with_turns > 0:
+                    run_info += f" | Avg Turns: {stats.average_turns:.1f}"
+
+            print(run_info)
+            print()
+
+            # Store run statistics for later display
+            run_stats_list.append((run_name, stats))
+
+            # Collect completed files for timing analysis
+            all_completed_files.extend(stats.completed_files)
+
+            # Collect task results for Pass@n calculation
+            for task_id, is_correct in task_results.items():
+                if task_id not in all_task_results:
+                    all_task_results[task_id] = []
+                all_task_results[task_id].append(is_correct)
+
+            # Update summary statistics
+            summary.total_tasks += stats.total
+            summary.total_completed += stats.completed
+            summary.total_running += stats.running
+            summary.total_failed += stats.failed
+            summary.total_judge_correct += stats.judge_correct
+            summary.total_no_boxed_found += stats.no_boxed_found
+
+        # Display summary after all runs are processed
+        self._display_summary(
+            summary,
+            run_stats_list,
+            all_completed_files,
+            benchmark_name_std,
+            all_task_results,
+        )
+
+        return summary
+
+    def _calculate_pass_at_n(
+        self, all_task_results: Dict[str, List[bool]], total_tasks: int
+    ) -> Tuple[int, float]:
+        """Calculate Pass@n: number of tasks with at least one correct answer across all runs
+
+        Returns:
+            Tuple[int, float]: (pass_at_n_count, pass_at_n_percentage)
+        """
+        if not all_task_results or total_tasks == 0:
+            return 0, 0.0
+
+        pass_at_n_count = 0
+        for task_id, results in all_task_results.items():
+            # If at least one run got it correct, this task passes
+            if any(results):
+                pass_at_n_count += 1
+
+        pass_at_n_percentage = (
+            (pass_at_n_count / total_tasks * 100) if total_tasks > 0 else 0.0
+        )
+        return pass_at_n_count, pass_at_n_percentage
+
+    def _display_summary(
+        self,
+        summary: SummaryStats,
+        run_stats_list: List[Tuple[str, TaskStats]],
+        completed_files: List[str],
+        benchmark_name_std: str,
+        all_task_results: Dict[str, List[bool]] = None,
+    ):
+        """Display summary statistics"""
+        print("=" * 80)
+        print("SUMMARY STATISTICS")
+        print("=" * 80)
+        print(
+            f"Total Tasks: {summary.total_tasks} ({summary.total_completed} completed, {summary.total_running} running)"
+        )
+
+        # Estimate completion time using overall progress rate
+        if summary.total_tasks > 0 and summary.total_completed > 0:
+            remaining_tasks = summary.total_tasks - summary.total_completed
+            earliest_start = find_earliest_start_time(completed_files)
+            latest_end = find_latest_end_time(completed_files)
+            completion_estimate = estimate_completion_time(
+                summary.total_tasks, summary.total_completed, completed_files
+            )
+
+            print(f"Remaining Tasks: {remaining_tasks}")
+            if earliest_start:
+                elapsed_time = latest_end - earliest_start
+                elapsed_minutes = elapsed_time.total_seconds() / 60
+                tasks_per_minute = (
+                    summary.total_completed / elapsed_minutes
+                    if elapsed_minutes > 0
+                    else 0
+                )
+                print(f"Elapsed Time: {elapsed_minutes:.1f} minutes")
+                print(f"Completion Rate: {tasks_per_minute:.1f} tasks/minute")
+            print(f"Estimated Time to Complete: {completion_estimate}")
+
+        if summary.total_completed > 0:
+            accuracy_bar = create_progress_bar(summary.total_judge_accuracy)
+            print(
+                f"Judge Accuracy: {summary.total_judge_correct}/{summary.total_completed} {accuracy_bar}"
+            )
+
+            # Calculate and display overall average turns
+            total_turns = sum(stats.total_turns for _, stats in run_stats_list)
+            total_tasks_with_turns = sum(
+                stats.completed_tasks_with_turns for _, stats in run_stats_list
+            )
+            if total_tasks_with_turns > 0:
+                overall_avg_turns = total_turns / total_tasks_with_turns
+                print(f"Overall Average Turns: {overall_avg_turns:.1f}")
+
+        # Display each run's correct percentage
+        if run_stats_list:
+            print()
+            print("INDIVIDUAL RUN ACCURACIES:")
+            for run_name, stats in run_stats_list:
+                if stats.completed > 0:
+                    accuracy_bar = create_progress_bar(stats.judge_accuracy)
+                    print(
+                        f"  {run_name}: {stats.judge_correct}/{stats.completed} {accuracy_bar}"
+                    )
+                else:
+                    print(
+                        f"  {run_name}: {stats.judge_correct}/{stats.completed} (N/A)"
+                    )
+
+            # Display mean accuracy and standard deviation (Pass@1 Acc (Avg@n))
+            num_runs = len(run_stats_list)
+            mean_acc, std_acc = summary.average_run_accuracy(run_stats_list)
+            if mean_acc > 0:
+                print()
+                if num_runs > 1:
+                    print(
+                        f"Pass@1 Acc (Avg@{num_runs}): {mean_acc:.1f}% ± {std_acc:.1f}%"
+                    )
+                else:
+                    print(f"MEAN ACCURACY: {mean_acc:.1f}% ± {std_acc:.1f}%")
+
+            # Display Pass@n if multiple runs
+            if num_runs > 1 and all_task_results:
+                # Calculate total unique tasks (use the first run's total as reference)
+                first_run_total = (
+                    run_stats_list[0][1].total
+                    if run_stats_list
+                    else summary.total_tasks
+                )
+                pass_at_n_count, pass_at_n_percentage = self._calculate_pass_at_n(
+                    all_task_results, first_run_total
+                )
+                pass_at_n_bar = create_progress_bar(pass_at_n_percentage)
+                print(
+                    f"Pass@{num_runs}: {pass_at_n_count}/{first_run_total} {pass_at_n_bar}"
+                )
+
+            # Display no boxed content found statistics
+            if summary.total_completed > 0:
+                print(
+                    f"No \\boxed{{}} content found: {summary.total_no_boxed_found}/{summary.total_completed} ({summary.total_no_boxed_found / summary.total_completed * 100:.1f}%)"
+                )
+
+        print("=" * 80)
+        print()
+
+        # Save analysis results to log file
+        self._save_analysis_log(
+            summary,
+            run_stats_list,
+            completed_files,
+            benchmark_name_std,
+            all_task_results,
+        )
+
+    def _save_analysis_log(
+        self,
+        summary: SummaryStats,
+        run_stats_list: List[Tuple[str, TaskStats]],
+        completed_files: List[str],
+        benchmark_name_std: str,
+        all_task_results: Dict[str, List[bool]] = None,
+    ) -> None:
+        """Save analysis results to a log file in the target directory"""
+        try:
+            # Create log filename with timestamp
+            timestamp = datetime.now().strftime(LOG_FILE_TIMESTAMP_FORMAT)
+            log_filename = f"{LOG_FILE_PREFIX}{timestamp}.log"
+            log_path = os.path.join(self.target_path, log_filename)
+
+            # Capture the analysis output
+            output_buffer = StringIO()
+
+            # Write header
+            output_buffer.write("=" * 80 + "\n")
+            output_buffer.write(f"{benchmark_name_std} Progress Analysis\n")
+            output_buffer.write(
+                f"Generated at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+            )
+            output_buffer.write(f"Target Path: {self.target_path}\n")
+            output_buffer.write("=" * 80 + "\n\n")
+
+            # Write run statistics
+            for run_name, stats in run_stats_list:
+                output_buffer.write(
+                    f"{run_name}: Status: {stats.completed} completed, {stats.running} running, {stats.failed} failed\n"
+                )
+                if stats.completed > 0:
+                    accuracy = stats.judge_correct / stats.completed * 100
+                    output_buffer.write(
+                        f"  Overall Accuracy: {stats.judge_correct}/{stats.completed} ({accuracy:.1f}%)\n"
+                    )
+                else:
+                    output_buffer.write(
+                        f"  Overall Accuracy: {stats.judge_correct}/{stats.completed} (N/A)\n"
+                    )
+                output_buffer.write("\n")
+
+            # Write summary statistics
+            output_buffer.write("=" * 80 + "\n")
+            output_buffer.write("SUMMARY STATISTICS\n")
+            output_buffer.write("=" * 80 + "\n")
+            output_buffer.write(
+                f"Total Tasks: {summary.total_tasks} ({summary.total_completed} completed, {summary.total_running} running)\n"
+            )
+
+            # Write timing information
+            if summary.total_tasks > 0 and summary.total_completed > 0:
+                remaining_tasks = summary.total_tasks - summary.total_completed
+                earliest_start = find_earliest_start_time(completed_files)
+                latest_end = find_latest_end_time(completed_files)
+                completion_estimate = estimate_completion_time(
+                    summary.total_tasks, summary.total_completed, completed_files
+                )
+
+                output_buffer.write(f"Remaining Tasks: {remaining_tasks}\n")
+                if earliest_start:
+                    elapsed_time = latest_end - earliest_start
+                    elapsed_minutes = elapsed_time.total_seconds() / 60
+                    tasks_per_minute = (
+                        summary.total_completed / elapsed_minutes
+                        if elapsed_minutes > 0
+                        else 0
+                    )
+                    output_buffer.write(
+                        f"Elapsed Time: {elapsed_minutes:.1f} minutes\n"
+                    )
+                    output_buffer.write(
+                        f"Completion Rate: {tasks_per_minute:.1f} tasks/minute\n"
+                    )
+                output_buffer.write(
+                    f"Estimated Time to Complete: {completion_estimate}\n"
+                )
+
+            if summary.total_completed > 0:
+                accuracy = summary.total_judge_correct / summary.total_completed * 100
+                output_buffer.write(
+                    f"Judge Accuracy: {summary.total_judge_correct}/{summary.total_completed} ({accuracy:.1f}%)\n"
+                )
+                no_boxed_percentage = (
+                    summary.total_no_boxed_found / summary.total_completed * 100
+                )
+                output_buffer.write(
+                    f"No \\boxed{{}} content found: {summary.total_no_boxed_found}/{summary.total_completed} ({no_boxed_percentage:.1f}%)\n"
+                )
+
+            # Write individual run accuracies
+            if run_stats_list:
+                output_buffer.write("\nINDIVIDUAL RUN ACCURACIES:\n")
+                for run_name, stats in run_stats_list:
+                    if stats.completed > 0:
+                        accuracy = stats.judge_correct / stats.completed * 100
+                        output_buffer.write(
+                            f"  {run_name}: {stats.judge_correct}/{stats.completed} ({accuracy:.1f}%)\n"
+                        )
+                    else:
+                        output_buffer.write(
+                            f"  {run_name}: {stats.judge_correct}/{stats.completed} (N/A)\n"
+                        )
+
+                # Write mean accuracy and standard deviation (Pass@1 Acc (Avg@n))
+                num_runs = len(run_stats_list)
+                mean_acc, std_acc = summary.average_run_accuracy(run_stats_list)
+                if mean_acc > 0:
+                    if num_runs > 1:
+                        output_buffer.write(
+                            f"\nPass@1 Acc (Avg@{num_runs}): {mean_acc:.1f}% ± {std_acc:.1f}%\n"
+                        )
+                    else:
+                        output_buffer.write(
+                            f"\nMEAN ACCURACY: {mean_acc:.1f}% ± {std_acc:.1f}%\n"
+                        )
+
+                # Write Pass@n if multiple runs
+                if num_runs > 1 and all_task_results:
+                    first_run_total = (
+                        run_stats_list[0][1].total
+                        if run_stats_list
+                        else summary.total_tasks
+                    )
+                    pass_at_n_count, pass_at_n_percentage = self._calculate_pass_at_n(
+                        all_task_results, first_run_total
+                    )
+                    output_buffer.write(
+                        f"Pass@{num_runs}: {pass_at_n_count}/{first_run_total} ({pass_at_n_percentage:.1f}%)\n"
+                    )
+
+                    if summary.total_completed > 0:
+                        no_boxed_percentage = (
+                            summary.total_no_boxed_found / summary.total_completed * 100
+                        )
+                        output_buffer.write(
+                            f"No \\boxed{{}} content found: {summary.total_no_boxed_found}/{summary.total_completed} ({no_boxed_percentage:.1f}%)\n"
+                        )
+
+            output_buffer.write("=" * 80 + "\n")
+
+            # Write to file
+            with open(log_path, "w", encoding="utf-8") as f:
+                f.write(output_buffer.getvalue())
+
+            output_buffer.close()
+            print(f"Analysis results saved to: {log_path}")
+
+        except Exception as e:
+            print(f"Warning: Could not save analysis log: {e}")
+
+

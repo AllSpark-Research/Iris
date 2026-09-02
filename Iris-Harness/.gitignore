@@ -1,0 +1,20 @@
+# runs
+logs/
+outputs/
+multirun/
+
+# benchmark data is downloaded, never committed (see data/README.md)
+data/*/
+!data/README.md
+
+# secrets
+.env
+.env.*
+!.env.example
+
+# python
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/
+.pytest_cache/
