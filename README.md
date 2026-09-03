@@ -103,6 +103,18 @@ bash scripts/run_eval.sh --base-url http://127.0.0.1:21234/v1 --llm-config iris-
   --benchmarks "browsecomp:0:1" --context-discard-threshold 131072
 ```
 
+## Acknowledgements
+
+Iris is built on open-source work, and we are grateful to the teams behind it:
+
+- [**MiroThinker**](https://github.com/MiroMindAI/MiroThinker) and
+  [**MiroFlow**](https://github.com/MiroMindAI/MiroFlow) (MiroMind) — Iris-Harness is derived from
+  MiroFlow, which gave us the agent loop and the MCP tool layer.
+- [**ms-swift**](https://github.com/modelscope/ms-swift) (ModelScope) — supervised fine-tuning.
+- [**slime**](https://github.com/THUDM/slime) (THUDM) — reinforcement learning.
+- [**Relax**](https://github.com/redai-studio/Relax) — asynchronous RL engine, which carried the
+  later climbing rounds.
+
 ---
 
 The data construction and training pipelines are coming soon.
