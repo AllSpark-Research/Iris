@@ -7,7 +7,7 @@
 <div align="center">
 🤗 <a href="https://huggingface.co/collections/AllSpark-Research/iris"><b>Hugging Face</b></a>&nbsp;&nbsp;|&nbsp;&nbsp;
 💻 <a href="https://github.com/AllSpark-Research/Iris"><b>GitHub</b></a>&nbsp;&nbsp;|&nbsp;&nbsp;
-🔬 <a href="https://github.com/AllSpark-Research"><b>AllSpark Research</b></a>
+🔬 <a href="https://arxiv.org/pdf/2609.04304"><b>Paper</b></a>
 </div>
 
 # Iris
@@ -111,6 +111,22 @@ Iris is built on open-source work, and we are grateful to the teams behind it:
 - [**Relax**](https://github.com/redai-studio/Relax) 
 - [**ms-swift**](https://github.com/modelscope/ms-swift) 
 - [**slime**](https://github.com/THUDM/slime) 
+
+## Citation
+
+If you find Iris useful in your research, please cite our paper:
+
+```bibtex
+@misc{liu2026irisclimbingsearchfrontier,
+  title={Iris: Climbing to the Search Frontier},
+  author={Ziyuan Liu and Hengqi Liu and Zichuan Wang and Yang Qin and Jiachen Liang and Xu Chu and Shaowei Chen and Yuantao Gu and Zhaokai Luo and Yao Hu and Mu Chuan},
+  year={2026},
+  eprint={2609.04304},
+  archivePrefix={arXiv},
+  primaryClass={cs.AI},
+  url={https://arxiv.org/abs/2609.04304},
+}
+```
 
 ---
 
