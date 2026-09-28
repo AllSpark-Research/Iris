@@ -7,7 +7,7 @@
 <div align="center">
 🤗 <a href="https://huggingface.co/collections/AllSpark-Research/iris"><b>Hugging Face</b></a>&nbsp;&nbsp;|&nbsp;&nbsp;
 💻 <a href="https://github.com/AllSpark-Research/Iris"><b>GitHub</b></a>&nbsp;&nbsp;|&nbsp;&nbsp;
-📄 <a href="https://arxiv.org/pdf/2609.04304"><b>Paper</b></a>
+📄 <a href="https://arxiv.org/pdf/2609.04304"><b>Tech Report</b></a>
 </div>
 
 # Iris
